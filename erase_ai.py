@@ -13,6 +13,7 @@ import torch
 import torch.nn.functional as F
 
 from model import EraserUNet
+from protect import printed_blobs, printed_curves, protect_mask
 
 
 def load_model(path, dev):
@@ -58,11 +59,17 @@ def hysteresis(prob, thr, min_area=30):
     return keep[lab].astype(np.uint8)
 
 
-def erase_page(net, gray, dev, thr=0.5, grow=2):
+def erase_page(net, gray, dev, thr=0.5, grow=2, protect=True, dpi=200):
     clean, prob = run_tiled(net, gray, dev)
     # 필기로 판단된 곳(+주변)만 모델 복원본으로 교체, 나머지는 원본 그대로 → 인쇄 글씨 선명도 유지
     m = hysteresis(prob, thr, min_area=30)
-    m = cv2.dilate(m, np.ones((3, 3), np.uint8), iterations=grow).astype(np.float32)
+    m = cv2.dilate(m, np.ones((3, 3), np.uint8), iterations=grow)
+    if protect:  # 인쇄된 그래프·도형·직선은 지우지 않음
+        m[printed_curves(gray, m, dpi) > 0] = 0
+        m[printed_blobs(gray, m, dpi) > 0] = 0
+        m[protect_mask(gray, dpi) > 0] = 0
+        prob = prob * m
+    m = m.astype(np.float32)
     m = cv2.GaussianBlur(m, (5, 5), 0)
     out = gray.astype(np.float32) / 255 * (1 - m) + clean * m
     return (np.clip(out, 0, 1) * 255).astype(np.uint8), prob
@@ -78,6 +85,7 @@ def main(argv=None):
     ap.add_argument("--grow", type=int, default=2, help="지우는 영역 확장")
     ap.add_argument("--quality", type=int, default=90)
     ap.add_argument("--pages", help="처리할 쪽 (예: 1-3,5)")
+    ap.add_argument("--no-protect", action="store_true", help="그래프/직선 보호 끄기 (그래프 위 필기까지 지울 때)")
     ap.add_argument("--save-mask", action="store_true", help="필기 감지 결과도 PDF로 저장")
     a = ap.parse_args(argv)
 
@@ -94,7 +102,7 @@ def main(argv=None):
         page = src[i]
         pix = page.get_pixmap(dpi=a.dpi, colorspace=pymupdf.csGRAY)
         gray = np.frombuffer(pix.samples, np.uint8).reshape(pix.height, pix.width).copy()
-        res, prob = erase_page(net, gray, dev, a.thr, a.grow)
+        res, prob = erase_page(net, gray, dev, a.thr, a.grow, not a.no_protect, a.dpi)
         for doc, im in [(out, res)] + ([(mdoc, (255 - (prob > a.thr) * 200).astype(np.uint8))] if a.save_mask else []):
             buf = cv2.imencode(".jpg", im, [cv2.IMWRITE_JPEG_QUALITY, a.quality])[1].tobytes()
             np_ = doc.new_page(width=page.rect.width, height=page.rect.height)

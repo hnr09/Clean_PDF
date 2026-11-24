@@ -25,6 +25,7 @@ pip install -r requirements.txt
 python erase_ai.py 시험지.pdf                 # AI: 검정 펜 필기 지우기 + 복원 → 시험지_clean.pdf
 python erase_ai.py 시험지.pdf --thr 0.35      # 더 많이 지우기
 python erase_ai.py 시험지.pdf --save-mask     # 필기로 감지한 영역도 따로 저장
+python erase_ai.py 시험지.pdf --no-protect    # 그래프/도형 보호 끄기 (그래프 위에 쓴 필기까지 지울 때)
 python erase_handwriting.py 노트.pdf          # 색 펜 / 태블릿 주석
 ```
 
@@ -48,10 +49,12 @@ python train.py --steps 8000 --out eraser.pt
 | `Clean_PDF.ipynb` | Colab 노트북 |
 | `erase_ai.py` | AI 필기 제거 + 복원 |
 | `erase_handwriting.py` | 색상/연필 필터, 태블릿 주석 삭제 |
+| `protect.py` | 인쇄된 그래프·도형·아이콘·표 선 보호 |
 | `train.py` / `synth.py` / `model.py` | 학습 / 합성 데이터 / U-Net 모델 |
 | `eraser.pt` | 학습된 모델 (CPU로 짧게 학습한 초기 버전) |
 
 ## 한계
 - 필기가 글자를 **완전히 덮은** 경우는 원래 글자를 알 수 없으므로 주변으로 추정해 채웁니다(틀릴 수 있음).
-- 짧은 세로획 필기는 표 선과 헷갈려 남을 수 있고, 인쇄된 그래프 곡선이 일부 지워질 수 있습니다 → 추가 학습으로 개선.
+- 인쇄된 그래프(좌표축·함수 곡선), 채워진 아이콘(나무·●), 제목 배지, 표 선은 자동으로 보호합니다. 대신 **그래프 위에 쓴 필기는 남을 수 있어요** → `--no-protect`.
+- 짧은 세로획 필기는 표 선과 헷갈려 남을 수 있습니다 → 추가 학습으로 개선.
 - 결과 PDF는 이미지 PDF입니다(텍스트 검색 불가).

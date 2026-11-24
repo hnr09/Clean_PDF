@@ -30,17 +30,20 @@ def load_clean_pdf_pages(paths, dpi=200):
 
 @torch.no_grad()
 def real_handwriting_ignore(pages, model_path):
-    """필기가 있는 실제 스캔: 기존 모델로 필기 위치를 찾아 학습에서 제외할 영역을 만든다."""
+    """필기가 있는 실제 스캔: 기존 모델로 필기 위치를 찾아 학습에서 제외할 영역을 만든다.
+    인쇄된 그래프·도형·직선은 제외하지 않아야 '지우면 안 되는 것'으로 학습된다."""
     import cv2
-    from erase_ai import load_model, run_tiled
+    from erase_ai import hysteresis, load_model, run_tiled
+    from protect import printed_blobs, printed_curves, protect_mask
     net = load_model(model_path, "cuda" if torch.cuda.is_available() else "cpu")
     out = []
     for g in pages:
         _, prob = run_tiled(net, g, next(net.parameters()).device)
-        m = (prob > 0.4).astype(np.uint8)
-        n, lab, st, _ = cv2.connectedComponentsWithStats(m)
-        big = np.zeros(n, np.uint8); big[st[:, cv2.CC_STAT_AREA] > 150] = 1; big[0] = 0
-        out.append(cv2.dilate(big[lab], np.ones((25, 25), np.uint8)))
+        m = cv2.dilate(hysteresis(prob, 0.4, min_area=30), np.ones((3, 3), np.uint8), iterations=2)
+        m[printed_curves(g, m) > 0] = 0
+        m[printed_blobs(g, m) > 0] = 0
+        m[protect_mask(g) > 0] = 0
+        out.append(cv2.dilate(m, np.ones((21, 21), np.uint8)))
         print(f"  실제 필기 제외 영역 {out[-1].mean()*100:.1f}%")
     return out
 

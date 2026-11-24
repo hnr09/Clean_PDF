@@ -89,7 +89,7 @@ def _block(d, x0, y, w, ymax):
             return y
         d.text((x0, y), line, font=f, fill=random.randint(0, 50))
         y += lh
-    if kind < 0.25:  # 그래프/그림 (인쇄된 곡선은 지우면 안 됨)
+    if kind < 0.3:  # 그래프/그림 (인쇄된 곡선은 지우면 안 됨)
         gh = random.randint(150, 320)
         if y + gh > ymax:
             return y
@@ -138,12 +138,30 @@ def _block(d, x0, y, w, ymax):
 def _graph(d, x0, y0, w, h, fs):
     """축 + 곡선 + 점선 + 라벨이 있는 인쇄 그래프, 또는 도형 그림."""
     c = random.randint(0, 60)
-    lw = random.choice([1, 2, 2, 3])
+    lw = random.choice([1, 2, 2, 3, 3, 4, 5])
     f = _font(PRINT_FONTS, int(fs * 0.7))
-    if random.random() < 0.75:
+    r0 = random.random()
+    if r0 < 0.2:  # 채워진 아이콘 (나무, 사람, ●▲■)
+        for _ in range(random.randint(2, 7)):
+            px, py = x0 + random.randint(0, max(1, w - 60)), y0 + random.randint(20, max(21, h - 40))
+            s = random.randint(12, 40)
+            k = random.random()
+            if k < 0.4:  # 나무
+                d.polygon([(px, py), (px - s // 2, py + s), (px + s // 2, py + s)], fill=c)
+                d.rectangle([px - 2, py + s, px + 2, py + s + s // 3], fill=c)
+            elif k < 0.7:
+                d.ellipse([px, py, px + s, py + s], fill=c)
+            else:
+                d.rectangle([px, py, px + s, py + s // 2], fill=c)
+        return
+    if random.random() < 0.3:  # 축이 희미하거나 없는 그래프도 있음
+        c_axis = random.randint(120, 200)
+    else:
+        c_axis = c
+    if r0 < 0.8:
         ox, oy = x0 + 30, y0 + h - 25
-        d.line([(ox, oy), (x0 + w, oy)], fill=c, width=lw)
-        d.line([(ox, oy), (ox, y0)], fill=c, width=lw)
+        d.line([(ox, oy), (x0 + w, oy)], fill=c_axis, width=max(1, lw - 1))
+        d.line([(ox, oy), (ox, y0)], fill=c_axis, width=max(1, lw - 1))
         d.polygon([(x0 + w, oy), (x0 + w - 8, oy - 4), (x0 + w - 8, oy + 4)], fill=c)
         d.polygon([(ox, y0), (ox - 4, y0 + 8), (ox + 4, y0 + 8)], fill=c)
         d.text((x0 + w - 30, oy + 4), random.choice(["시간", "t", "x", "온도"]), font=f, fill=c)
