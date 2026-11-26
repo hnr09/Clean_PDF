@@ -43,6 +43,9 @@ sudo apt install fonts-nanum fonts-nanum-extra   # 합성용 한글 글꼴
 python train.py --resume eraser.pt --scan-pdf 내스캔.pdf --steps 3000
 # 필기 없는 원본 시험지 PDF도 있으면 함께 (같은 글꼴·표 양식 학습)
 python train.py --resume eraser.pt --scan-pdf 내스캔.pdf --clean-pdf 기출원본.pdf --steps 3000
+# 실제 스캔본의 진짜 손글씨로 학습 (인쇄 영역 좌표만 적어 주면, 그 밖의 필기를 잘라 학습에 사용)
+python tools/prepare_real.py 스캔.pdf boxes.json -o real.npz
+python train.py --resume eraser.pt --real-npz real.npz --steps 3000
 # 처음부터 학습
 python train.py --steps 8000 --out eraser.pt
 # 웹에서 모은 자료로

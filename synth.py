@@ -206,9 +206,37 @@ def _graph(d, x0, y0, w, h, fs):
 
 
 # ------------------------------------------------------------------ 손필기 합성
+STAMPS = []  # 실제 스캔에서 잘라낸 진짜 손글씨 조각 (tools/prepare_real.py)
+
+
+def _paste_stamp(lay, scale):
+    st = random.choice(STAMPS)
+    f = scale * random.uniform(0.7, 1.25)
+    st = cv2.resize(st, None, fx=f, fy=f, interpolation=cv2.INTER_AREA)
+    if random.random() < 0.5:
+        M = cv2.getRotationMatrix2D((st.shape[1] / 2, st.shape[0] / 2), random.uniform(-8, 8), 1)
+        st = cv2.warpAffine(st, M, (st.shape[1], st.shape[0]), borderValue=255)
+    if random.random() < 0.5:  # 펜 진하기 변화
+        k = random.uniform(0.6, 1.3)
+        st = np.where(st < 250, np.clip(255 - (255 - st.astype(np.float32)) * k, 0, 255), 255).astype(np.uint8)
+    h, w = lay.shape
+    sh, sw = st.shape
+    # 패치보다 크면 일부만, 작으면 아무 위치에
+    oy, ox = random.randint(-sh // 2, max(-sh // 2, h - sh // 2)), random.randint(-sw // 2, max(-sw // 2, w - sw // 2))
+    ys, xs = max(0, oy), max(0, ox)
+    ye, xe = min(h, oy + sh), min(w, ox + sw)
+    if ye > ys and xe > xs:
+        lay[ys:ye, xs:xe] = np.minimum(lay[ys:ye, xs:xe], st[ys - oy:ye - oy, xs - ox:xe - ox])
+
+
 def _pen_layer(h, w, scale=1.0):
     """흰 바탕(255)에 필기 획(어두운 값)을 그린 레이어."""
     lay = np.full((h, w), 255, np.uint8)
+    if STAMPS and random.random() < 0.6:  # 진짜 손글씨 조각
+        for _ in range(random.choice([1, 1, 2, 3])):
+            _paste_stamp(lay, scale)
+        if random.random() < 0.5:
+            return lay
     n = random.choice([0, 1, 2, 3, 3, 4, 5, 6, 8])
     for _ in range(n):
         val = random.randint(0, 110)
@@ -317,7 +345,10 @@ def make_sample(page, size=256, ignore=None, real=False):
     H, W = page.shape
     s = random.uniform(0.8, 1.25) if real else random.uniform(0.7, 1.4)  # 해상도 다양화
     ps = int(size / s)
-    y, x = random.randint(0, H - ps), random.randint(0, W - ps)
+    for _ in range(6):  # 내용이 있는 곳을 우선 (빈 여백만 학습하지 않도록)
+        y, x = random.randint(0, H - ps), random.randint(0, W - ps)
+        if (page[y:y + ps:4, x:x + ps:4] < 160).mean() > 0.01:
+            break
     clean = cv2.resize(page[y:y + ps, x:x + ps], (size, size), interpolation=cv2.INTER_AREA)
     valid = np.ones((size, size), np.float32)
     if ignore is not None:

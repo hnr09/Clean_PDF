@@ -41,8 +41,8 @@ def real_handwriting_ignore(pages, model_path):
         _, prob = run_tiled(net, g, next(net.parameters()).device)
         m = cv2.dilate(hysteresis(prob, 0.4, min_area=30), np.ones((3, 3), np.uint8), iterations=2)
         m[printed_curves(g, m) > 0] = 0
-        m[printed_blobs(g, m) > 0] = 0
-        m[protect_mask(g) > 0] = 0
+        m[printed_blobs(g, m, prob=prob) > 0] = 0
+        m[protect_mask(g, prob=prob) > 0] = 0
         m[printed_symbols(g) > 0] = 0
         out.append(cv2.dilate(m, np.ones((21, 21), np.uint8)))
         print(f"  실제 필기 제외 영역 {out[-1].mean()*100:.1f}%")
@@ -127,6 +127,7 @@ def main():
     ap.add_argument("--scan-pdf", nargs="*", default=[],
                     help="필기가 있는 실제 스캔 PDF (--resume 모델로 기존 필기를 찾아 제외하고 배경으로 사용)")
     ap.add_argument("--contrib-dir", help="웹에서 모은 학습 자료 폴더 (예: /content/drive/MyDrive/CleanPDF_학습자료)")
+    ap.add_argument("--real-npz", nargs="*", default=[], help="tools/prepare_real.py 로 만든 실제 자료 (손글씨 조각 + 배경)")
     ap.add_argument("--resume")
     ap.add_argument("--out", default="eraser.pt")
     a = ap.parse_args()
@@ -143,6 +144,14 @@ def main():
     real = load_clean_pdf_pages(a.clean_pdf)
     scans = load_clean_pdf_pages(a.scan_pdf)
     ign = real_handwriting_ignore(scans, a.resume) if scans else []
+    for f in a.real_npz:
+        d = np.load(f, allow_pickle=True)
+        synth.STAMPS.extend([np.asarray(x, np.uint8) for x in d["stamps"]])
+        pg = [np.asarray(x, np.uint8) for x in d["pages"]]
+        auto = real_handwriting_ignore(pg, a.resume) if a.resume else [np.zeros_like(p) for p in pg]
+        scans += pg
+        ign += [np.maximum(i0.astype(np.uint8), i1.astype(np.uint8)) for i0, i1 in zip([np.asarray(x, np.uint8) for x in d["ignore"]], auto)]
+    print(f"실제 손글씨 조각 {len(synth.STAMPS)}개, 실제 배경 {len(scans)}쪽")
     contrib = load_contrib(a.contrib_dir) if a.contrib_dir else []
     dl = DataLoader(Synth(a.pages, real, a.size, scans, ign, contrib), batch_size=a.batch, num_workers=a.workers)
     print(f"device={dev}, params={sum(p.numel() for p in net.parameters())/1e6:.2f}M, 실제페이지={len(real)}")

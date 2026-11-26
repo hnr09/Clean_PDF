@@ -214,12 +214,23 @@ export function figureBoxes(gray, W, H, dpi = 200) {
   return boxes;
 }
 
-export function protectMask(gray, W, H, dpi = 200) {
+export function protectMask(gray, W, H, dpi = 200, prob = null, lineMax = 0.6, figMax = 0.5) {
   const { hor, ver } = lineMasks(gray, W, H, dpi, 0.35);
-  const both = new Uint8Array(W * H);
-  for (let i = 0; i < both.length; i++) both[i] = hor[i] | ver[i];
-  const keep = dilate(both, W, H, 3);
+  let lines = new Uint8Array(W * H);
+  for (let i = 0; i < lines.length; i++) lines[i] = hor[i] | ver[i];
+  if (prob) { // AI가 확신하는 선(손으로 그린 선)은 보호하지 않음
+    const { lab, n } = labelComponents(lines, W, H);
+    const sum = new Float64Array(n), cnt = new Int32Array(n);
+    for (let i = 0; i < lab.length; i++) if (lab[i]) { sum[lab[i]] += prob[i]; cnt[lab[i]]++; }
+    for (let i = 0; i < lab.length; i++) lines[i] = lab[i] && sum[lab[i]] / cnt[lab[i]] < lineMax ? 1 : 0;
+  }
+  const keep = dilate(lines, W, H, 3);
   for (const [x0, y0, x1, y1] of figureBoxes(gray, W, H, dpi)) {
+    if (prob) {
+      let s = 0, c = 0;
+      for (let y = y0; y < Math.min(H, y1); y++) for (let x = x0; x < Math.min(W, x1); x++) { const i = y * W + x; if (gray[i] < 170) { s += prob[i]; c++; } }
+      if (c && s / c >= figMax) continue;
+    }
     for (let y = y0; y < Math.min(H, y1); y++) for (let x = x0; x < Math.min(W, x1); x++) keep[y * W + x] = 1;
   }
   return keep;
@@ -264,22 +275,25 @@ export function printedCurves(gray, cand, W, H, dpi = 200) {
   return keep;
 }
 
-export function printedBlobs(gray, cand, W, H, dpi = 200, maxPen = 0.04, maxFill = 0.52) {
+export function printedBlobs(gray, cand, W, H, dpi = 200, maxPen = 0.04, maxFill = 0.52, prob = null, fillMaxProb = 0.65) {
   const keep = new Uint8Array(W * H);
   const ink = new Uint8Array(W * H);
   for (let i = 0; i < ink.length; i++) ink[i] = gray[i] < 140 ? 1 : 0;
   const dt = distanceTransform(ink, W, H);
   const { lab, n } = labelComponents(cand, W, H);
   const vals = Array.from({ length: n }, () => []);
-  const area = new Int32Array(n);
-  for (let i = 0; i < lab.length; i++) { const l = lab[i]; if (!l) continue; area[l]++; if (ink[i]) vals[l].push(dt[i]); }
+  const area = new Int32Array(n), psum = new Float64Array(n);
+  for (let i = 0; i < lab.length; i++) { const l = lab[i]; if (!l) continue; area[l]++; if (ink[i]) { vals[l].push(dt[i]); if (prob) psum[l] += prob[i]; } }
   const keepL = new Uint8Array(n);
   for (let k = 1; k < n; k++) {
     const v = vals[k]; if (v.length < 40) continue;
+    const pm = prob ? psum[k] / v.length : 0;
     v.sort((a, b) => a - b);
     const pos = 0.95 * (v.length - 1), lo = Math.floor(pos), f = pos - lo;
     const p95 = v[lo] + (v[Math.min(lo + 1, v.length - 1)] - v[lo]) * f;
-    if (2 * p95 > maxPen * dpi || v.length / area[k] > maxFill) keepL[k] = 1;
+    let dense = v.length / area[k] > maxFill;
+    if (dense && prob && pm >= fillMaxProb) dense = false;
+    if (2 * p95 > maxPen * dpi || dense) keepL[k] = 1;
   }
   for (let i = 0; i < lab.length; i++) if (keepL[lab[i]]) keep[i] = 1;
   return keep;
@@ -317,9 +331,9 @@ export async function erasePage(gray, W, H, runModel, opts = {}, onProgress) {
   if (protect) {
     const c = printedCurves(gray, m, W, H, dpi);
     for (let i = 0; i < m.length; i++) if (c[i]) m[i] = 0;
-    const b = printedBlobs(gray, m, W, H, dpi);
+    const b = printedBlobs(gray, m, W, H, dpi, 0.04, 0.52, prob);
     for (let i = 0; i < m.length; i++) if (b[i]) m[i] = 0;
-    const p = protectMask(gray, W, H, dpi);
+    const p = protectMask(gray, W, H, dpi, prob);
     for (let i = 0; i < m.length; i++) if (p[i]) m[i] = 0;
     const sy = printedSymbols(gray, W, H, dpi);
     for (let i = 0; i < m.length; i++) if (sy[i]) m[i] = 0;
@@ -328,9 +342,15 @@ export async function erasePage(gray, W, H, runModel, opts = {}, onProgress) {
   let cnt = 0;
   for (let i = 0; i < m.length; i++) { mf[i] = m[i]; cnt += m[i]; }
   const mb = gaussianBlur5(mf, W, H);
+  // 종이색 = 밝기 90% 지점 (지운 자리의 옅은 흔적 정리용)
+  const hist = new Uint32Array(256); let hn = 0;
+  for (let y = 0; y < H; y += 4) for (let x = 0; x < W; x += 4) { hist[gray[y * W + x]]++; hn++; }
+  let acc = 0, paper = 255;
+  for (let v = 0; v < 256; v++) { acc += hist[v]; if (acc >= 0.9 * hn) { paper = v / 255; break; } }
   const out = new Uint8Array(W * H);
   for (let i = 0; i < out.length; i++) {
-    const v = (gray[i] / 255) * (1 - mb[i]) + clean[i] * mb[i];
+    let v = (gray[i] / 255) * (1 - mb[i]) + clean[i] * mb[i];
+    if (mb[i] > 0.05 && v > 0.7) v = Math.max(v, paper);
     out[i] = Math.max(0, Math.min(255, Math.round(v * 255)));
   }
   return { out, mask: m, ratio: cnt / m.length };

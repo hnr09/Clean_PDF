@@ -47,11 +47,24 @@ def figure_boxes(gray, dpi=200):
     return boxes
 
 
-def protect_mask(gray, dpi=200):
-    """1 = 지우지 말 것."""
+def protect_mask(gray, dpi=200, prob=None, line_max=0.6, fig_max=0.5):
+    """1 = 지우지 말 것. prob(모델 확률)가 주어지면, AI가 확신하는 선·그림(손으로 그린 상자 등)은 보호하지 않음."""
     hor, ver = line_masks(gray, dpi)
-    keep = cv2.dilate(hor | ver, np.ones((3, 3), np.uint8))
+    lines = hor | ver
+    if prob is not None:
+        n, lab, _, _ = cv2.connectedComponentsWithStats(lines)
+        if n > 1:
+            mean = np.bincount(lab.ravel(), weights=prob.ravel(), minlength=n) / np.maximum(np.bincount(lab.ravel(), minlength=n), 1)
+            ok = mean < line_max
+            ok[0] = False
+            lines = ok[lab].astype(np.uint8)
+    keep = cv2.dilate(lines, np.ones((3, 3), np.uint8))
+    ink = gray < 170
     for x0, y0, x1, y1 in figure_boxes(gray, dpi):
+        if prob is not None:
+            sel = ink[y0:y1, x0:x1]
+            if sel.any() and prob[y0:y1, x0:x1][sel].mean() >= fig_max:
+                continue
         keep[y0:y1, x0:x1] = 1
     return keep
 
@@ -85,9 +98,9 @@ def printed_curves(gray, cand, dpi=200):
     return keep
 
 
-def printed_blobs(gray, cand, dpi=200, max_pen=0.04, max_fill=0.52):
+def printed_blobs(gray, cand, dpi=200, max_pen=0.04, max_fill=0.52, prob=None, fill_max_prob=0.65):
     """후보 덩어리 중 인쇄물로 보이는 것: 펜보다 훨씬 굵은 채워진 도형(나무 아이콘, ● 등)
-    또는 잉크가 빽빽한 인쇄 글자 묶음(제목 배지 등)."""
+    또는 잉크가 빽빽한 인쇄 글자 묶음(제목 배지 등). 빽빽한 묶음은 AI가 확신하면(손글씨로) 보호하지 않음."""
     keep = np.zeros_like(cand, dtype=np.uint8)
     ink = (gray < 140).astype(np.uint8)
     dt = cv2.distanceTransform(ink, cv2.DIST_L2, 3)
@@ -99,7 +112,10 @@ def printed_blobs(gray, cand, dpi=200, max_pen=0.04, max_fill=0.52):
         if sel.sum() < 40:
             continue
         sw = 2 * np.percentile(dt[y:y + h, x:x + w][sel], 95)
-        if sw > max_pen * dpi or sel.sum() / area > max_fill:
+        dense = sel.sum() / area > max_fill
+        if dense and prob is not None and prob[y:y + h, x:x + w][sel].mean() >= fill_max_prob:
+            dense = False
+        if sw > max_pen * dpi or dense:
             keep[y:y + h, x:x + w][comp] = 1
     return keep
 

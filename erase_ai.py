@@ -66,13 +66,17 @@ def erase_page(net, gray, dev, thr=0.5, grow=2, protect=True, dpi=200):
     m = cv2.dilate(m, np.ones((3, 3), np.uint8), iterations=grow)
     if protect:  # 인쇄된 그래프·도형·직선은 지우지 않음
         m[printed_curves(gray, m, dpi) > 0] = 0
-        m[printed_blobs(gray, m, dpi) > 0] = 0
-        m[protect_mask(gray, dpi) > 0] = 0
+        m[printed_blobs(gray, m, dpi, prob=prob) > 0] = 0
+        m[protect_mask(gray, dpi, prob=prob) > 0] = 0
         m[printed_symbols(gray, dpi) > 0] = 0
         prob = prob * m
     m = m.astype(np.float32)
     m = cv2.GaussianBlur(m, (5, 5), 0)
     out = gray.astype(np.float32) / 255 * (1 - m) + clean * m
+    # 지운 자리의 옅은 회색 흔적은 종이색으로 정리
+    paper = np.percentile(gray[::4, ::4], 90) / 255
+    ghost = (m > 0.05) & (out > 0.7)
+    out[ghost] = np.maximum(out[ghost], paper)
     return (np.clip(out, 0, 1) * 255).astype(np.uint8), prob
 
 
