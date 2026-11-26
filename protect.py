@@ -32,11 +32,14 @@ def figure_boxes(gray, dpi=200):
         for hx0, hx1, hy in H:
             if abs(hy - vy1) > tol or abs(hx0 - vx) > tol:
                 continue
-            # 표/상자 제외: 이 세로선 왼쪽 끝에서 시작하는 다른 가로선(위쪽 테두리, 행 구분선)이 있으면 표
-            others = [1 for (a0, a1, yy) in H if abs(a0 - vx) <= tol and vy0 - tol <= yy < hy - tol
+            # 표 제외: 이 세로선에서 시작하는 내부 가로선(행 구분선)이 있으면 표
+            others = [1 for (a0, a1, yy) in H if abs(a0 - vx) <= tol and vy0 + tol < yy < hy - tol
                       and (a1 - a0) >= 0.8 * (hx1 - hx0)]
             # 가로축 오른쪽 끝에 세로선이 있으면 닫힌 상자
-            closed = any(abs(x - hx1) <= tol and y0 < hy - tol and abs(y1 - hy) <= tol for (x, y0, y1) in V if x != vx)
+            # 닫힌 상자(<보기> 등): 오른쪽 세로선 + 위쪽 테두리가 있음. 위 테두리가 없으면 양쪽 y축 그래프로 봄
+            right = any(abs(x - hx1) <= tol and y0 < hy - tol and abs(y1 - hy) <= tol for (x, y0, y1) in V if x != vx)
+            top = any(abs(a0 - vx) <= tol and abs(yy - vy0) <= tol for (a0, a1, yy) in H)
+            closed = right and top and (hx1 - hx0) > 0.3 * gray.shape[1]  # 좁은 틀은 테두리 있는 그래프
             if others or closed:
                 continue
             m = int(0.25 * dpi)
@@ -99,3 +102,23 @@ def printed_blobs(gray, cand, dpi=200, max_pen=0.04, max_fill=0.52):
         if sw > max_pen * dpi or sel.sum() / area > max_fill:
             keep[y:y + h, x:x + w][comp] = 1
     return keep
+
+
+def printed_symbols(gray, dpi=200):
+    """작고 속이 꽉 찬 인쇄 기호(●, ■ 등)를 찾는다. 손필기 획은 가늘고 속이 비어 있어서 걸리지 않음."""
+    ink = (gray < 140).astype(np.uint8)
+    n, lab, st, _ = cv2.connectedComponentsWithStats(ink, connectivity=8)
+    lo, hi = 0.025 * dpi, 0.15 * dpi
+    keepl = np.zeros(n, np.uint8)
+    for k in range(1, n):
+        x, y, w, h, a = st[k]
+        if not (lo <= w <= hi and lo <= h <= hi and 0.6 <= w / h <= 1.6):
+            continue
+        if a / (w * h) < 0.6:
+            continue
+        comp = lab[y:y + h, x:x + w] == k
+        core = comp[h // 4:max(h - h // 4, h // 4 + 1), w // 4:max(w - w // 4, w // 4 + 1)]
+        if core.mean() >= 0.9:
+            keepl[k] = 1
+    keepl[0] = 0
+    return cv2.dilate(keepl[lab], np.ones((5, 5), np.uint8))

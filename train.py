@@ -34,7 +34,7 @@ def real_handwriting_ignore(pages, model_path):
     인쇄된 그래프·도형·직선은 제외하지 않아야 '지우면 안 되는 것'으로 학습된다."""
     import cv2
     from erase_ai import hysteresis, load_model, run_tiled
-    from protect import printed_blobs, printed_curves, protect_mask
+    from protect import printed_blobs, printed_curves, printed_symbols, protect_mask
     net = load_model(model_path, "cuda" if torch.cuda.is_available() else "cpu")
     out = []
     for g in pages:
@@ -43,6 +43,7 @@ def real_handwriting_ignore(pages, model_path):
         m[printed_curves(g, m) > 0] = 0
         m[printed_blobs(g, m) > 0] = 0
         m[protect_mask(g) > 0] = 0
+        m[printed_symbols(g) > 0] = 0
         out.append(cv2.dilate(m, np.ones((21, 21), np.uint8)))
         print(f"  실제 필기 제외 영역 {out[-1].mean()*100:.1f}%")
     return out

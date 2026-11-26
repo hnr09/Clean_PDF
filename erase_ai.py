@@ -13,7 +13,7 @@ import torch
 import torch.nn.functional as F
 
 from model import EraserUNet
-from protect import printed_blobs, printed_curves, protect_mask
+from protect import printed_blobs, printed_curves, printed_symbols, protect_mask
 
 
 def load_model(path, dev):
@@ -68,6 +68,7 @@ def erase_page(net, gray, dev, thr=0.5, grow=2, protect=True, dpi=200):
         m[printed_curves(gray, m, dpi) > 0] = 0
         m[printed_blobs(gray, m, dpi) > 0] = 0
         m[protect_mask(gray, dpi) > 0] = 0
+        m[printed_symbols(gray, dpi) > 0] = 0
         prob = prob * m
     m = m.astype(np.float32)
     m = cv2.GaussianBlur(m, (5, 5), 0)
