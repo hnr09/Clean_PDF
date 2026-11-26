@@ -2,7 +2,11 @@
 
 PDF에서 필기를 지우고, **필기에 가려진 인쇄 글씨를 AI가 복원**합니다.
 
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/hnr09/Clean_PDF/blob/main/Clean_PDF.ipynb)
+## 👉 바로 쓰기: **https://hnr09.github.io/Clean_PDF/**
+설치 없이 브라우저에서 PDF를 끌어다 놓으면 끝. 파일은 서버로 올라가지 않고 **내 컴퓨터 안에서** 처리돼요.
+결과에서 ✏️ **수정**을 누르면 잘못 지워진 그림을 클릭 한 번으로 되살리고, 남은 필기는 지우개 붓으로 지울 수 있어요.
+
+(모델 추가 학습용) [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/hnr09/Clean_PDF/blob/main/Clean_PDF.ipynb)
 
 | 필기 종류 | 사용할 도구 | 결과 |
 |---|---|---|
@@ -10,7 +14,7 @@ PDF에서 필기를 지우고, **필기에 가려진 인쇄 글씨를 AI가 복�
 | 종이 + 색 펜 / 형광펜 / 연필 | `erase_handwriting.py` | 색·밝기 필터 (빠름) |
 | 태블릿 필기 (PDF 주석) | `erase_handwriting.py --mode annot` | 무손실 삭제 |
 
-## Colab에서 쓰기 (추천)
+## Colab에서 쓰기
 1. 위의 **Open in Colab** 버튼 클릭
 2. `런타임 → 런타임 유형 변경 → T4 GPU` (선택, 빠름)
 3. 셀을 위에서부터 ▶ 실행 → PDF 업로드 → 결과 비교 → 다운로드
@@ -41,11 +45,21 @@ python train.py --resume eraser.pt --scan-pdf 내스캔.pdf --steps 3000
 python train.py --resume eraser.pt --scan-pdf 내스캔.pdf --clean-pdf 기출원본.pdf --steps 3000
 # 처음부터 학습
 python train.py --steps 8000 --out eraser.pt
+# 웹에서 모은 자료로
+python train.py --resume eraser.pt --contrib-dir CleanPDF_학습자료 --steps 4000
+python export_onnx.py      # 웹 페이지용 모델도 갱신
 ```
+
+## 사용자 자료로 계속 학습하기
+웹 페이지에 "학습에 기여하기"(사용자 동의 후 전송)를 켜면, 결과가 내 Google Drive에 모이고 Colab 8번 셀로 모델을 개선할 수 있어요.
+설정 방법: [`contrib/README.md`](contrib/README.md)
 
 ## 파일 구성
 | 파일 | 설명 |
 |---|---|
+| `docs/` | 웹 페이지 (GitHub Pages). `pipeline.js`는 `erase_ai.py`+`protect.py`와 같은 처리, `eraser.onnx`는 웹용 모델 |
+| `contrib/` | 학습 자료 수집용 Google Apps Script |
+| `export_onnx.py` | `eraser.pt` → `docs/eraser.onnx` 변환 |
 | `Clean_PDF.ipynb` | Colab 노트북 |
 | `erase_ai.py` | AI 필기 제거 + 복원 |
 | `erase_handwriting.py` | 색상/연필 필터, 태블릿 주석 삭제 |

@@ -49,10 +49,47 @@ def real_handwriting_ignore(pages, model_path):
     return out
 
 
+def load_contrib(root):
+    """웹에서 사용자가 보내 준 (원본, 결과) 쌍. 둘의 차이 = 지운 필기 → 그대로 정답으로 사용."""
+    import glob
+    import os
+
+    import cv2
+    pairs = []
+    for d in sorted(glob.glob(os.path.join(root, "*"))):
+        o, r = os.path.join(d, "orig.jpg"), os.path.join(d, "result.jpg")
+        if not (os.path.exists(o) and os.path.exists(r)):
+            continue
+        a, b = cv2.imread(o, 0), cv2.imread(r, 0)
+        if a is None or b is None or a.shape != b.shape:
+            continue
+        m = cv2.dilate((cv2.absdiff(a, b) > 25).astype(np.uint8), np.ones((3, 3), np.uint8))
+        pairs.append((a, b, m))
+    print(f"기여 자료 {len(pairs)}쪽")
+    return pairs
+
+
+def contrib_sample(pair, size):
+    import cv2
+    a, b, m = pair
+    H, W = a.shape
+    s = random.uniform(0.85, 1.2)
+    ps = int(size / s)
+    y, x = random.randint(0, H - ps), random.randint(0, W - ps)
+    crop = lambda z, it=cv2.INTER_AREA: cv2.resize(z[y:y + ps, x:x + ps], (size, size), interpolation=it)
+    inp, tgt, mask = crop(a), crop(b), crop(m, cv2.INTER_NEAREST)
+    if random.random() < 0.3:  # 합성 필기를 조금 더 얹어 데이터 늘리기
+        hw = synth._pen_layer(size, size, scale=s)
+        inp = np.minimum(inp, hw)
+        mask = np.maximum(mask, (hw < 200).astype(np.uint8))
+    return inp, tgt, mask, np.ones((size, size), np.float32)
+
+
 class Synth(IterableDataset):
-    def __init__(self, n_pages, real_pages, size, scans=(), scan_ign=()):
+    def __init__(self, n_pages, real_pages, size, scans=(), scan_ign=(), contrib=()):
         self.n_pages, self.real, self.size = n_pages, real_pages, size
         self.scans, self.scan_ign = list(scans), list(scan_ign)
+        self.contrib = list(contrib)
 
     def __iter__(self):
         wi = torch.utils.data.get_worker_info()
@@ -62,7 +99,9 @@ class Synth(IterableDataset):
         i = 0
         while True:
             r = random.random()
-            if self.scans and r < 0.5:
+            if self.contrib and r < 0.5:
+                inp, tgt, m, v = contrib_sample(random.choice(self.contrib), self.size)
+            elif self.scans and r < 0.7:
                 k = random.randrange(len(self.scans))
                 inp, tgt, m, v = synth.make_sample(self.scans[k], self.size, self.scan_ign[k], real=True)
             else:
@@ -87,6 +126,7 @@ def main():
     ap.add_argument("--clean-pdf", nargs="*", default=[], help="필기 없는 실제 PDF (선택)")
     ap.add_argument("--scan-pdf", nargs="*", default=[],
                     help="필기가 있는 실제 스캔 PDF (--resume 모델로 기존 필기를 찾아 제외하고 배경으로 사용)")
+    ap.add_argument("--contrib-dir", help="웹에서 모은 학습 자료 폴더 (예: /content/drive/MyDrive/CleanPDF_학습자료)")
     ap.add_argument("--resume")
     ap.add_argument("--out", default="eraser.pt")
     a = ap.parse_args()
@@ -103,7 +143,8 @@ def main():
     real = load_clean_pdf_pages(a.clean_pdf)
     scans = load_clean_pdf_pages(a.scan_pdf)
     ign = real_handwriting_ignore(scans, a.resume) if scans else []
-    dl = DataLoader(Synth(a.pages, real, a.size, scans, ign), batch_size=a.batch, num_workers=a.workers)
+    contrib = load_contrib(a.contrib_dir) if a.contrib_dir else []
+    dl = DataLoader(Synth(a.pages, real, a.size, scans, ign, contrib), batch_size=a.batch, num_workers=a.workers)
     print(f"device={dev}, params={sum(p.numel() for p in net.parameters())/1e6:.2f}M, 실제페이지={len(real)}")
 
     t0, run = time.time(), None

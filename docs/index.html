@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Clean PDF · 필기 지우개</title>
+<meta name="description" content="PDF 시험지의 필기를 지우고 가려진 인쇄 글씨를 AI로 복원합니다. 파일은 브라우저 밖으로 나가지 않아요.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect x='5' y='3' width='22' height='26' rx='3' fill='%23fffdf7' stroke='%231f2a37' stroke-width='2'/><path d='M10 11h12M10 16h12M10 21h8' stroke='%231f2a37' stroke-width='2' stroke-linecap='round'/></svg>">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+<style>
+  :root {
+    --bg: #f6f3ec;
+    --paper: #fffdf8;
+    --ink: #1f2a37;
+    --muted: #6b7280;
+    --line: #e4ddcf;
+    --accent: #2f5bd3;
+    --accent-ink: #ffffff;
+    --accent-soft: #e8eefc;
+    --red: #d64545;
+    --ok: #1f8a5b;
+    --shadow: 0 1px 2px rgba(31, 42, 55, .06), 0 8px 24px rgba(31, 42, 55, .06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #14171c; --paper: #1c2027; --ink: #e8eaed; --muted: #9aa3ae; --line: #2c323b;
+      --accent: #7aa2ff; --accent-ink: #0d1320; --accent-soft: #1f2a44; --red: #ff7b7b; --ok: #5ad19a;
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.25);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #14171c; --paper: #1c2027; --ink: #e8eaed; --muted: #9aa3ae; --line: #2c323b;
+    --accent: #7aa2ff; --accent-ink: #0d1320; --accent-soft: #1f2a44; --red: #ff7b7b; --ok: #5ad19a;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.25);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--bg); color: var(--ink);
+    font-family: Pretendard, -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+    line-height: 1.55; -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 40px 16px 80px; }
+  header { margin-bottom: 28px; }
+  h1 { font-size: clamp(28px, 5vw, 40px); letter-spacing: -0.02em; margin: 0 0 6px; }
+  h1 .strike { text-decoration: line-through; text-decoration-color: var(--red); text-decoration-thickness: 3px; color: var(--muted); }
+  .lead { color: var(--muted); margin: 0; font-size: 16px; }
+  .privacy { display: inline-flex; gap: 6px; align-items: center; margin-top: 12px; font-size: 13px; color: var(--ok);
+    background: color-mix(in srgb, var(--ok) 10%, transparent); padding: 4px 10px; border-radius: 999px; }
+  .card { background: var(--paper); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); padding: 20px; margin-bottom: 16px; }
+  .step { font-size: 12px; font-weight: 700; color: var(--accent); letter-spacing: .04em; text-transform: uppercase; margin-bottom: 10px; }
+  #drop { border: 2px dashed var(--line); border-radius: 12px; padding: 34px 16px; text-align: center; cursor: pointer; transition: .15s; }
+  #drop:hover, #drop.over { border-color: var(--accent); background: var(--accent-soft); }
+  #drop b { display: block; font-size: 17px; margin-bottom: 4px; }
+  #drop span { color: var(--muted); font-size: 14px; }
+  #fileinfo { margin-top: 10px; font-size: 14px; color: var(--muted); min-height: 1.5em; word-break: break-all; }
+  .seg { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 16px; }
+  .seg label { border: 1px solid var(--line); border-radius: 10px; padding: 12px; cursor: pointer; display: block; }
+  .seg input { position: absolute; opacity: 0; pointer-events: none; }
+  .seg label:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); }
+  .seg .t { font-weight: 700; display: block; }
+  .seg .d { font-size: 13px; color: var(--muted); }
+  .opts { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px 20px; }
+  .opt > .name { font-weight: 600; font-size: 14px; margin-bottom: 6px; display: flex; justify-content: space-between; }
+  .opt .help { font-size: 12.5px; color: var(--muted); margin-top: 4px; }
+  input[type=range] { width: 100%; accent-color: var(--accent); }
+  .scale { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); }
+  select, input[type=text] { width: 100%; font: inherit; font-size: 14px; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); }
+  .check { display: flex; gap: 8px; align-items: flex-start; font-size: 14px; font-weight: 600; cursor: pointer; }
+  .check input { margin-top: 4px; accent-color: var(--accent); width: 16px; height: 16px; }
+  .actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 18px; align-items: center; }
+  button { font: inherit; font-weight: 700; border-radius: 10px; padding: 12px 18px; border: 1px solid var(--line); background: var(--paper); color: var(--ink); cursor: pointer; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  #progress { display: none; }
+  .bar { height: 10px; background: var(--bg); border: 1px solid var(--line); border-radius: 999px; overflow: hidden; }
+  .bar > div { height: 100%; width: 0%; background: var(--accent); transition: width .2s; }
+  #status { font-size: 14px; color: var(--muted); margin-top: 8px; }
+  #error { display: none; color: var(--red); font-size: 14px; margin-top: 10px; white-space: pre-wrap; }
+  #results { display: none; }
+  .res-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+  .res-head h2 { margin: 0; font-size: 20px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
+  .page { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--bg); }
+  .page .img { position: relative; background: #fff; cursor: zoom-in; }
+  .page img { display: block; width: 100%; height: auto; }
+  .page .bar2 { display: flex; justify-content: space-between; align-items: center; padding: 8px 10px; font-size: 13px; gap: 6px; }
+  .tog { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .tog button { border: 0; border-radius: 0; padding: 4px 8px; font-size: 12px; font-weight: 600; background: transparent; }
+  .tog button.on { background: var(--accent); color: var(--accent-ink); }
+  #editor { position: fixed; inset: 0; background: var(--bg); display: none; flex-direction: column; z-index: 10; }
+  #edbar { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--paper); }
+  #edbar b { margin-right: 4px; }
+  #edtools { display: inline-flex; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  #edtools button { border: 0; border-radius: 0; padding: 8px 12px; font-size: 14px; }
+  #edtools button.on { background: var(--accent); color: var(--accent-ink); }
+  #edbar .sp { flex: 1; }
+  #edbar button.small { padding: 8px 12px; font-size: 14px; }
+  #edbar label { font-size: 13px; display: inline-flex; gap: 6px; align-items: center; color: var(--muted); }
+  #edbar input[type=range] { width: 110px; }
+  #edhelp { font-size: 13px; color: var(--muted); padding: 6px 16px; background: var(--paper); border-bottom: 1px solid var(--line); }
+  #edhelp i { font-style: normal; padding: 0 4px; border-radius: 4px; }
+  #edwrap { flex: 1; overflow: auto; padding: 16px; }
+  #edcanvas { display: block; margin: 0 auto; width: min(100%, 1100px); height: auto; background: #fff; box-shadow: var(--shadow); cursor: pointer; touch-action: none; }
+  .tips { font-size: 14px; color: var(--muted); }
+  .tips li { margin-bottom: 4px; }
+  footer { margin-top: 30px; font-size: 13px; color: var(--muted); }
+  footer a { color: var(--accent); }
+  @media (max-width: 560px) { .seg { grid-template-columns: 1fr; } .wrap { padding-top: 24px; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Clean PDF <span class="strike">필기</span></h1>
+    <p class="lead">PDF 시험지의 필기를 지우고, 필기에 가려진 인쇄 글씨를 AI로 복원해요.</p>
+    <div class="privacy">🔒 파일은 서버로 올라가지 않고 내 브라우저 안에서만 처리돼요 (직접 "학습 자료로 보내기"를 누른 경우만 제외)</div>
+  </header>
+
+  <section class="card">
+    <div class="step">1 · PDF 선택</div>
+    <div id="drop" tabindex="0" role="button" aria-label="PDF 파일 선택">
+      <b>PDF를 여기로 끌어다 놓거나 클릭하세요</b>
+      <span>스캔한 종이 시험지, 태블릿 필기 PDF 모두 가능</span>
+    </div>
+    <input id="file" type="file" accept="application/pdf,.pdf" hidden>
+    <div id="fileinfo"></div>
+  </section>
+
+  <section class="card">
+    <div class="step">2 · 설정</div>
+    <div class="seg">
+      <label><input type="radio" name="mode" value="ai" checked><span class="t">손필기 지우기 (AI)</span><span class="d">스캔본의 펜·연필 필기 제거 + 밑의 글씨 복원</span></label>
+      <label><input type="radio" name="mode" value="annot"><span class="t">태블릿 주석 지우기</span><span class="d">GoodNotes·삼성노트 등 주석 필기를 화질 손실 없이 삭제</span></label>
+    </div>
+    <div class="opts" id="aiopts">
+      <div class="opt">
+        <div class="name"><span>지우는 강도</span><span id="strengthVal">보통</span></div>
+        <input id="strength" type="range" min="0.2" max="0.8" step="0.05" value="0.5">
+        <div class="scale"><span>덜 지움</span><span>더 지움</span></div>
+        <div class="help">필기가 남으면 ↑, 인쇄 글씨가 지워지면 ↓</div>
+      </div>
+      <div class="opt">
+        <div class="name">화질</div>
+        <select id="dpi">
+          <option value="150">보통 (빠름)</option>
+          <option value="200" selected>좋음 (추천)</option>
+          <option value="250">최고 (느림)</option>
+        </select>
+        <div class="help">결과 PDF는 이미지로 저장돼요</div>
+      </div>
+      <div class="opt">
+        <div class="name">쪽 범위</div>
+        <input id="pages" type="text" placeholder="전체 (예: 1-3, 5)">
+      </div>
+      <div class="opt">
+        <label class="check"><input id="protect" type="checkbox" checked><span>그래프·그림 보호<span class="help" style="display:block;font-weight:400">끄면 그래프 위 필기까지 지우지만, 그래프가 지워질 수 있어요</span></span></label>
+      </div>
+    </div>
+    <div class="actions">
+      <button id="start" class="primary" disabled>필기 지우기 시작</button>
+      <span id="backend" class="tips"></span>
+    </div>
+  </section>
+
+  <section class="card" id="progress">
+    <div class="step">3 · 처리 중</div>
+    <div class="bar"><div id="barfill"></div></div>
+    <div id="status"></div>
+    <div id="error"></div>
+  </section>
+
+  <section class="card" id="results">
+    <div class="res-head">
+      <h2 id="restitle">결과</h2>
+      <button id="download" class="primary">⬇ PDF 다운로드</button>
+    </div>
+    <div class="grid" id="grid"></div>
+  </section>
+
+  <section class="card" id="contrib" style="display:none">
+    <div class="step">선택 · 학습에 기여하기</div>
+    <p class="tips" style="margin-top:0">결과가 마음에 들거나 ✏️ 수정으로 고쳤다면, 이 결과를 AI 학습 자료로 보내 주세요. 다음 버전의 모델이 더 정확해져요.
+      보내는 것: 처리한 쪽의 <b>원본 이미지 · 결과 이미지 · 지운 영역</b> (파일 이름·개인정보는 보내지 않아요).</p>
+    <label class="check"><input id="cconsent" type="checkbox"><span>이 시험지 이미지(필기 포함)를 Clean PDF 모델 학습에 쓰도록 개발자의 Google Drive로 보내는 데 동의해요.<span class="help" style="display:block;font-weight:400">다른 사람의 이름·개인정보가 적힌 시험지는 보내지 마세요.</span></span></label>
+    <div class="actions"><button id="csend" disabled>학습 자료로 보내기</button><span id="cstatus" class="tips"></span></div>
+  </section>
+
+  <section class="card">
+    <div class="step">도움말</div>
+    <ul class="tips">
+      <li>결과에서 <b>✏️ 수정</b>을 누르면, 잘못 지워진 그림·그래프를 <b>클릭 한 번으로 원본으로 되살리고</b>, 남은 필기는 지우개 붓으로 지울 수 있어요.</li>
+      <li><b>검정 펜 필기</b>도 지워요. 필기가 글자를 완전히 덮은 곳은 AI가 주변 획으로 추정해서 채워요(틀릴 수 있음).</li>
+      <li>처음 실행할 때 AI 모델(약 5MB)을 내려받아요. 컴퓨터에서 쪽당 몇 초~수십 초 걸려요. 크롬·엣지 최신 버전이면 GPU로 더 빨라요.</li>
+      <li>결과가 아쉬우면 <a href="https://github.com/hnr09/Clean_PDF">GitHub 저장소</a>의 Colab 노트북으로 내 시험지에 맞춰 모델을 추가 학습할 수 있어요.</li>
+    </ul>
+  </section>
+
+  <footer>Clean PDF · <a href="https://github.com/hnr09/Clean_PDF">GitHub</a></footer>
+</div>
+
+<div id="editor" role="dialog" aria-modal="true" aria-labelledby="edtitle">
+  <div id="edbar">
+    <b id="edtitle">수정</b>
+    <div id="edtools">
+      <button data-tool="click" class="on">👆 클릭: 되살리기/지우기</button><button data-tool="erase">🧽 지우개 붓</button><button data-tool="restore">↩ 원본 붓</button>
+    </div>
+    <label>붓 크기 <input id="edsize" type="range" min="6" max="80" value="24"></label>
+    <label><input id="edmask" type="checkbox" checked> 지운 곳 표시</label>
+    <span class="sp"></span>
+    <button id="edundo" class="small">되돌리기</button>
+    <button id="edcancel" class="small">취소</button>
+    <button id="edsave" class="small primary">저장</button>
+  </div>
+  <div id="edhelp"><i style="background:#ffd0d0">빨간 곳</i> = AI가 지운 곳 → 잘못 지운 그림·글씨는 <b>클릭하면 원본으로 되살아나요</b> (<i style="background:#d6e2ff">파란 곳</i>이 되살린 곳, 다시 클릭하면 다시 지워짐). 남은 필기는 🧽 지우개 붓으로 문지르세요.</div>
+  <div id="edwrap"><canvas id="edcanvas"></canvas></div>
+</div>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>
