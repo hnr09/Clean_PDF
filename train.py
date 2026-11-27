@@ -78,6 +78,17 @@ def contrib_sample(pair, size):
     y, x = random.randint(0, H - ps), random.randint(0, W - ps)
     crop = lambda z, it=cv2.INTER_AREA: cv2.resize(z[y:y + ps, x:x + ps], (size, size), interpolation=it)
     inp, tgt, mask = crop(a), crop(b), crop(m, cv2.INTER_NEAREST)
+    if random.random() < 0.6:  # 디지털 노트도 스캔본처럼 보이게 (대비·흐림은 둘 다, 노이즈·압축은 입력만)
+        lo, hi = random.uniform(0, 40), random.uniform(200, 255)
+        f = lambda z: (lo + z.astype(np.float32) / 255 * (hi - lo))
+        inp, tgt = f(inp), f(tgt)
+        if random.random() < 0.5:
+            k, sg = random.choice([3, 5]), random.uniform(0.3, 1.0)
+            inp, tgt = cv2.GaussianBlur(inp, (k, k), sg), cv2.GaussianBlur(tgt, (k, k), sg)
+        inp = np.clip(inp + np.random.normal(0, random.uniform(0, 6), inp.shape), 0, 255).astype(np.uint8)
+        tgt = np.clip(tgt, 0, 255).astype(np.uint8)
+        if random.random() < 0.7:
+            inp = cv2.imdecode(cv2.imencode(".jpg", inp, [cv2.IMWRITE_JPEG_QUALITY, random.randint(50, 95)])[1], 0)
     if random.random() < 0.3:  # 합성 필기를 조금 더 얹어 데이터 늘리기
         hw = synth._pen_layer(size, size, scale=s)
         inp = np.minimum(inp, hw)
@@ -90,6 +101,7 @@ class Synth(IterableDataset):
         self.n_pages, self.real, self.size = n_pages, real_pages, size
         self.scans, self.scan_ign = list(scans), list(scan_ign)
         self.contrib = list(contrib)
+        self.contrib_ratio = 0.35
 
     def __iter__(self):
         wi = torch.utils.data.get_worker_info()
@@ -99,7 +111,7 @@ class Synth(IterableDataset):
         i = 0
         while True:
             r = random.random()
-            if self.contrib and r < 0.5:
+            if self.contrib and r < self.contrib_ratio:
                 inp, tgt, m, v = contrib_sample(random.choice(self.contrib), self.size)
             elif self.scans and r < 0.7:
                 k = random.randrange(len(self.scans))
@@ -128,6 +140,8 @@ def main():
                     help="필기가 있는 실제 스캔 PDF (--resume 모델로 기존 필기를 찾아 제외하고 배경으로 사용)")
     ap.add_argument("--contrib-dir", help="웹에서 모은 학습 자료 폴더 (예: /content/drive/MyDrive/CleanPDF_학습자료)")
     ap.add_argument("--real-npz", nargs="*", default=[], help="tools/prepare_real.py 로 만든 실제 자료 (손글씨 조각 + 배경)")
+    ap.add_argument("--contrib-ratio", type=float, default=0.35, help="기여/정답쌍 자료를 뽑을 비율")
+    ap.add_argument("--ignore-model", help="실제 스캔의 필기 위치를 찾을 때 쓸 모델 (기본: --resume)")
     ap.add_argument("--resume")
     ap.add_argument("--out", default="eraser.pt")
     a = ap.parse_args()
@@ -143,17 +157,20 @@ def main():
     sched = torch.optim.lr_scheduler.OneCycleLR(opt, a.lr, total_steps=a.steps, pct_start=0.05)
     real = load_clean_pdf_pages(a.clean_pdf)
     scans = load_clean_pdf_pages(a.scan_pdf)
-    ign = real_handwriting_ignore(scans, a.resume) if scans else []
+    ign_model = a.ignore_model or a.resume
+    ign = real_handwriting_ignore(scans, ign_model) if scans else []
     for f in a.real_npz:
         d = np.load(f, allow_pickle=True)
         synth.STAMPS.extend([np.asarray(x, np.uint8) for x in d["stamps"]])
         pg = [np.asarray(x, np.uint8) for x in d["pages"]]
-        auto = real_handwriting_ignore(pg, a.resume) if a.resume else [np.zeros_like(p) for p in pg]
+        auto = real_handwriting_ignore(pg, ign_model) if ign_model else [np.zeros_like(p) for p in pg]
         scans += pg
         ign += [np.maximum(i0.astype(np.uint8), i1.astype(np.uint8)) for i0, i1 in zip([np.asarray(x, np.uint8) for x in d["ignore"]], auto)]
     print(f"실제 손글씨 조각 {len(synth.STAMPS)}개, 실제 배경 {len(scans)}쪽")
     contrib = load_contrib(a.contrib_dir) if a.contrib_dir else []
-    dl = DataLoader(Synth(a.pages, real, a.size, scans, ign, contrib), batch_size=a.batch, num_workers=a.workers)
+    ds = Synth(a.pages, real, a.size, scans, ign, contrib)
+    ds.contrib_ratio = a.contrib_ratio
+    dl = DataLoader(ds, batch_size=a.batch, num_workers=a.workers)
     print(f"device={dev}, params={sum(p.numel() for p in net.parameters())/1e6:.2f}M, 실제페이지={len(real)}")
 
     t0, run = time.time(), None

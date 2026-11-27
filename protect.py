@@ -138,3 +138,4 @@ def printed_symbols(gray, dpi=200):
             keepl[k] = 1
     keepl[0] = 0
     return cv2.dilate(keepl[lab], np.ones((5, 5), np.uint8))
+

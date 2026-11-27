@@ -46,6 +46,9 @@ python train.py --resume eraser.pt --scan-pdf 내스캔.pdf --clean-pdf 기출�
 # 실제 스캔본의 진짜 손글씨로 학습 (인쇄 영역 좌표만 적어 주면, 그 밖의 필기를 잘라 학습에 사용)
 python tools/prepare_real.py 스캔.pdf boxes.json -o real.npz
 python train.py --resume eraser.pt --real-npz real.npz --steps 3000
+# 태블릿 필기(주석)가 있는 PDF → 필기 있음/없음 정답 쌍을 자동으로 만들어 학습 (가장 정확한 자료)
+python tools/annot_pairs.py 노트.pdf -o pairs/ --stamps note_stamps.npz
+python train.py --resume eraser.pt --contrib-dir pairs/ --real-npz note_stamps.npz --contrib-ratio 0.2 --steps 3000
 # 처음부터 학습
 python train.py --steps 8000 --out eraser.pt
 # 웹에서 모은 자료로
