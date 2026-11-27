@@ -25,8 +25,11 @@ import cv2
 import numpy as np
 import pymupdf
 
-# 지우지 않을 주석 종류 (링크, 양식 필드 등은 필기가 아님)
-KEEP_ANNOTS = {pymupdf.PDF_ANNOT_LINK, pymupdf.PDF_ANNOT_WIDGET, pymupdf.PDF_ANNOT_POPUP}
+# 필기로 보는 주석 종류만 지움. 붙여 넣은 이미지(Stamp), 링크, 양식 필드 등은 남김
+HANDWRITING_ANNOTS = {pymupdf.PDF_ANNOT_INK, pymupdf.PDF_ANNOT_HIGHLIGHT, pymupdf.PDF_ANNOT_UNDERLINE,
+                      pymupdf.PDF_ANNOT_STRIKE_OUT, pymupdf.PDF_ANNOT_SQUIGGLY, pymupdf.PDF_ANNOT_FREE_TEXT,
+                      pymupdf.PDF_ANNOT_LINE, pymupdf.PDF_ANNOT_SQUARE, pymupdf.PDF_ANNOT_CIRCLE,
+                      pymupdf.PDF_ANNOT_POLYGON, pymupdf.PDF_ANNOT_POLY_LINE, pymupdf.PDF_ANNOT_CARET}
 
 
 # ----------------------------------------------------------------------------
@@ -37,7 +40,7 @@ def remove_annotations(page) -> int:
     annot = page.first_annot
     while annot:
         nxt = annot.next
-        if annot.type[0] not in KEEP_ANNOTS:
+        if annot.type[0] in HANDWRITING_ANNOTS:
             page.delete_annot(annot)
             n += 1
         annot = nxt

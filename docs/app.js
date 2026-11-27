@@ -148,6 +148,8 @@ async function run() {
   }
 }
 
+const HANDWRITING_ANNOTS = new Set(['/Ink', '/Highlight', '/Underline', '/StrikeOut', '/Squiggly', '/FreeText',
+  '/Line', '/Square', '/Circle', '/Polygon', '/PolyLine', '/Caret']);
 async function runAnnot() {
   setProgress(0.3, '태블릿 주석 찾는 중…');
   const { PDFDocument, PDFName } = PDFLib;
@@ -162,7 +164,7 @@ async function runAnnot() {
       const a = doc.context.lookup(ref);
       const st = a && a.get && a.get(PDFName.of('Subtype'));
       const s = st ? st.toString() : '';
-      if (s === '/Link' || s === '/Widget') keep.push(ref); else removed++;
+      if (HANDWRITING_ANNOTS.has(s)) removed++; else keep.push(ref); // 붙여 넣은 이미지(Stamp)·링크 등은 남김
     }
     if (keep.length) page.node.set(PDFName.of('Annots'), doc.context.obj(keep));
     else page.node.delete(PDFName.of('Annots'));
